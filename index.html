@@ -439,14 +439,14 @@
       <p class="section-intro">Explore cuánto podría acumular o cuánto necesitaría ahorrar. Elija una acción o una canasta con pesos iguales; las proyecciones no predicen resultados reales.</p>
       <div id="stockChoices" class="choice-list"></div>
       <div class="form-grid">
-        <label class="field"><span id="returnSourceLabel">Rentabilidad base (efectiva anual)</span>
+        <label class="field">Rentabilidad base (efectiva anual)
           <select id="returnSource">
             <option value="three">Promedio anual 3 años</option>
             <option value="one">Último año</option>
             <option value="custom">Personalizada</option>
           </select>
         </label>
-        <label class="field" id="customReturnField" hidden><span id="customReturnLabel">Rentabilidad personalizada (% anual)</span>
+        <label class="field" id="customReturnField" hidden>Rentabilidad personalizada (% anual)
           <input id="customReturn" type="number" step="0.1" value="10" inputmode="decimal">
         </label>
       </div>
@@ -922,10 +922,15 @@
       return [...document.querySelectorAll('input[name="selectedStock"]:checked')].map(input => acciones[Number(input.value)]).filter(Boolean);
     }
     function datosBase() {
-      const selected = accionesSeleccionadas();
+      const fallbackStocks = acciones.length ? [acciones[0]] : [];
+      const selected = accionesSeleccionadas().length ? accionesSeleccionadas() : fallbackStocks;
       const source = document.getElementById("returnSource").value;
-      const rates = selected.map(stock => source === "custom" ? Number(document.getElementById("customReturn").value) : Number(stock[tasas[source]]) || 0);
-      const vols = selected.map(stock => Number(stock.volatilidad_anual_pct) / 100 || 0);
+      const customRate = Number(document.getElementById("customReturn")?.value ?? 10);
+      const rates = selected.map(stock => {
+        if (source === "custom") return Number.isFinite(customRate) && customRate > 0 ? customRate : 10;
+        return Number(stock[tasas[source]]) || 10;
+      });
+      const vols = selected.map(stock => Number(stock.volatilidad_anual_pct) / 100 || 0.15);
       return {
         stocks: selected,
         r: rates.reduce((sum, value) => sum + value, 0) / Math.max(1, rates.length) / 100,
@@ -980,15 +985,6 @@
         container.append(label);
       });
     }
-    function actualizarEtiquetasRentabilidad() {
-      const customTimeRate = modoActual === "time" && document.getElementById("returnSource").value === "custom";
-      document.getElementById("returnSourceLabel").textContent = customTimeRate
-        ? "Rentabilidad pesimista (efectiva anual)"
-        : "Rentabilidad base (efectiva anual)";
-      document.getElementById("customReturnLabel").textContent = customTimeRate
-        ? "Rentabilidad pesimista personalizada (% anual)"
-        : "Rentabilidad personalizada (% anual)";
-    }
     document.querySelectorAll(".tab").forEach(tab => tab.addEventListener("click", () => {
       modoActual = tab.dataset.mode;
       document.querySelectorAll(".tab").forEach(item => item.setAttribute("aria-selected", String(item === tab)));
@@ -996,12 +992,10 @@
       document.getElementById("simMessage").replaceChildren();
       if (graficoSimulacion) { graficoSimulacion.destroy(); graficoSimulacion = null; }
       ultimaSimulacion = null;
-      actualizarEtiquetasRentabilidad();
       renderInputs();
     }));
     document.getElementById("returnSource").addEventListener("change", event => {
       document.getElementById("customReturnField").hidden = event.target.value !== "custom";
-      actualizarEtiquetasRentabilidad();
       actualizarFuenteRentabilidad();
     });
     document.getElementById("customReturn").addEventListener("input", actualizarFuenteRentabilidad);
@@ -1073,13 +1067,11 @@
     function rendimientosEscenarios(r, sigma, years) {
       const root = Math.sqrt(Math.max(years, 1 / 12));
       const adjustment = sigma / root;
-      if (modoActual === "time" && document.getElementById("returnSource").value === "custom") {
-        return { pesimista: r, esperado: r + adjustment, optimista: r + 2 * adjustment };
-      }
       return { pesimista: r - adjustment, esperado: r, optimista: r + adjustment };
     }
     function resultadoTiempo(meses) {
       if (meses === 0) return "0 meses (meta ya alcanzada)";
+      if (meses === null || meses === undefined || Number.isNaN(meses) || meses > 1200) return "Más de 100 años";
       const years = Math.floor(meses / 12);
       const remaining = meses % 12;
       return `${years} ${years === 1 ? "año" : "años"} y ${remaining} ${remaining === 1 ? "mes" : "meses"}`;
@@ -1110,9 +1102,9 @@
         const yearsForScenario = expected.years || params.years || 1 / 12;
         const rates = rendimientosEscenarios(base.r, base.sigma, yearsForScenario);
         const scenarioResults = {};
-        Object.entries(rates).forEach(([name, rate]) => { scenarioResults[name] = proyectar(rate, params); });
-        const invalid = Object.values(scenarioResults).find(result => result.error);
-        if (invalid) throw new Error(invalid.error);
+        Object.entries(rates).forEach(([name, rate]) => {
+          scenarioResults[name] = proyectar(rate, params);
+        });
         if (base.r <= 0) {
           const note = document.createElement("p");
           note.className = "small";
