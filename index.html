@@ -439,14 +439,14 @@
       <p class="section-intro">Explore cuánto podría acumular o cuánto necesitaría ahorrar. Elija una acción o una canasta con pesos iguales; las proyecciones no predicen resultados reales.</p>
       <div id="stockChoices" class="choice-list"></div>
       <div class="form-grid">
-        <label class="field">Rentabilidad base (efectiva anual)
+        <label class="field"><span id="returnSourceLabel">Rentabilidad base (efectiva anual)</span>
           <select id="returnSource">
             <option value="three">Promedio anual 3 años</option>
             <option value="one">Último año</option>
             <option value="custom">Personalizada</option>
           </select>
         </label>
-        <label class="field" id="customReturnField" hidden>Rentabilidad personalizada (% anual)
+        <label class="field" id="customReturnField" hidden><span id="customReturnLabel">Rentabilidad personalizada (% anual)</span>
           <input id="customReturn" type="number" step="0.1" value="10" inputmode="decimal">
         </label>
       </div>
@@ -980,6 +980,15 @@
         container.append(label);
       });
     }
+    function actualizarEtiquetasRentabilidad() {
+      const customTimeRate = modoActual === "time" && document.getElementById("returnSource").value === "custom";
+      document.getElementById("returnSourceLabel").textContent = customTimeRate
+        ? "Rentabilidad pesimista (efectiva anual)"
+        : "Rentabilidad base (efectiva anual)";
+      document.getElementById("customReturnLabel").textContent = customTimeRate
+        ? "Rentabilidad pesimista personalizada (% anual)"
+        : "Rentabilidad personalizada (% anual)";
+    }
     document.querySelectorAll(".tab").forEach(tab => tab.addEventListener("click", () => {
       modoActual = tab.dataset.mode;
       document.querySelectorAll(".tab").forEach(item => item.setAttribute("aria-selected", String(item === tab)));
@@ -987,10 +996,12 @@
       document.getElementById("simMessage").replaceChildren();
       if (graficoSimulacion) { graficoSimulacion.destroy(); graficoSimulacion = null; }
       ultimaSimulacion = null;
+      actualizarEtiquetasRentabilidad();
       renderInputs();
     }));
     document.getElementById("returnSource").addEventListener("change", event => {
       document.getElementById("customReturnField").hidden = event.target.value !== "custom";
+      actualizarEtiquetasRentabilidad();
       actualizarFuenteRentabilidad();
     });
     document.getElementById("customReturn").addEventListener("input", actualizarFuenteRentabilidad);
@@ -1061,7 +1072,11 @@
     }
     function rendimientosEscenarios(r, sigma, years) {
       const root = Math.sqrt(Math.max(years, 1 / 12));
-      return { pesimista: r - sigma / root, esperado: r, optimista: r + sigma / root };
+      const adjustment = sigma / root;
+      if (modoActual === "time" && document.getElementById("returnSource").value === "custom") {
+        return { pesimista: r, esperado: r + adjustment, optimista: r + 2 * adjustment };
+      }
+      return { pesimista: r - adjustment, esperado: r, optimista: r + adjustment };
     }
     function resultadoTiempo(meses) {
       if (meses === 0) return "0 meses (meta ya alcanzada)";
